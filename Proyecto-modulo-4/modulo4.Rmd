@@ -1,0 +1,183 @@
+---
+title: "Proyecto-modulo-4"
+author: "Teddy Alvarez Zarate"
+date: "2023-08-02"
+output: github_document
+---
+
+```{r }
+library(tidyverse)
+datos <- read.csv("germancredit.csv")
+datos1 <- select(datos, Default, duration, amount, installment, age, cards)
+library(ggplot2)
+library(memisc)
+library(QuantPsyc)
+library(Epi)
+library(ROCR)
+library(ResourceSelection)
+library(gmodels)
+library(lmtest)
+library(foreign)
+library(forecast)
+
+```
+
+## 2.	Construye una función: Default (1=mal pagador), duration (plazo de la operación),amount(monto de la operación), installment(cuotas pagadas),age, edad al cuadrado, cards (número de tarjetas de crédito) través de un modelo logit Y probit.
+
+
+```{r }
+logit <- glm(Default~duration+amount+installment+age+cards, family = binomial(logit), data=datos1)
+probit <- glm(Default~duration+amount+installment+age+cards, family = binomial(probit), data=datos1)
+
+```
+
+## Construye los contrastes HL, matriz de confusión, curva ROC, área bajo la curva de los tres modelos y encuentra el punto de corte óptimo de los 2 modelos.
+
+### Contrastes HL.
+Ho: El modelo tiene una buena bondad de ajuste en términos de clasificación
+H1: El modelo no tiene una buena bondad de ajuste en términos de clasificación
+
+
+```{r }
+hl1 <- hoslem.test(datos1$Default, fitted(logit), g=10) 
+hl2 <- hoslem.test(datos1$Default, fitted(probit), g=10)
+
+hl1
+hl2
+```
+
+#### Tanto en el modelo logit como probit, p-value es mayor que 0,05, por lo que aceptamos la Ho que dice que el modelo tiene una buena bondad de ajuste en términos de clasificación
+
+### Matriz de confusión
+
+```{r pressure, echo=FALSE}
+threshold1 <- mean(fitted(logit))
+threshold2 <- mean(fitted(probit))
+ClassLog(logit, datos1$Default, cut = threshold1)
+ClassLog(probit, datos1$Default, cut = threshold2)
+
+
+```
+
+### Curva ROC
+
+```{r }
+predl <- prediction(logit$fitted.values, datos1$Default)
+predp <- prediction(probit$fitted.values, datos1$Default)
+perfl <- performance(predl, measure = "tpr", x.measure = "fpr")
+perfp <- performance(predp, measure = "tpr", x.measure = "fpr")
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+### Área bajo la curva modelo logit
+
+```{r }
+plot(perfl, colorize=TRUE, lty=3)
+abline(0,1, col="black")
+```
+
+### Area bajo la curva modelo probit
+
+```{r }
+plot(perfp, colorize=TRUE, lty=3)
+abline(0,1, col="black")
+
+```
+```{r }
+aucl <- performance(predl, measure = "auc")
+aucl <- aucl@y.values[[1]]
+aucl
+aucp <- performance(predp, measure = "auc")
+aucp <- aucp@y.values[[1]]
+aucp
+```
+### Punto de corte optimo
+#### Curva de sensitividad y especificidad de probit
+
+```{r }
+attach(datos1)
+attach(datos1)
+ROC(form=Default~duration+amount+installment+age+cards, plot = "sp")
+perf1 <- performance(predp, "sens", "spec")
+sen <- slot(perf1, "y.values")[[1]]
+esp <- slot(perf1, "x.values")[[1]]
+alfa <- slot(perf1, "alpha.values")[[1]]
+mat <- data.frame(alfa, sen, esp)
+
+```
+#### Curva de sensitividad y especificidad de logit
+
+```{r }
+perf2 <- performance(predl, "sens", "spec")
+sen2 <- slot(perf2, "y.values")[[1]]
+esp2 <- slot(perf2, "x.values")[[1]]
+alfa2 <- slot(perf2, "alpha.values")[[1]]
+mat2 <- data.frame(alfa2, sen2, esp2)
+m <- melt(mat, id=c("alfa"))
+m2 <- melt(mat2, id=c("alfa2"))
+library(reshape2)
+library(gridExtra)
+library(plotly)
+
+```
+
+
+```{r }
+p1 <- ggplot(m, aes(alfa, value, group=variable, colour=variable))+
+geom_line(size=1.2)+ labs(title = "Punto de corte para probit")
+ggplotly(p1)
+
+```
+
+
+
+```{r pressure, echo=FALSE}
+p2 <- ggplot(m2, aes(alfa2, value, group=variable, colour=variable))+
+geom_line(size=1.2)+ labs(title = "Punto de corte para logit")
+ggplotly(p2)
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+### Vuelve a estimar la matriz de clasificación con el nuevo umbral y reporta el porcentaje de clasificación correcta
+
+
+```{r pressure, echo=FALSE}
+threshold1 <- 0.2938
+threshold2 <- 0.2924
+ClassLog(logit, datos1$Default, cut = threshold1)
+ClassLog(probit, datos1$Default, cut = threshold2)
+
+```
+
+### Realice una proyección con valores hipotéticos (puedes inventarte los valores), muestre los valores y la proyección de los 2 modelos.
+
+```{r }
+names(datos1)
+```
+
+
+
+```{r }
+newdata <- data.frame(duration=42, amount=1180, installment=3, age=30, cards=1)
+
+```
+
+#### La probabilidad de que una persona sea un mal pagador cuando el plazo de la operación sea 42, el monto de la operación sea 1180, el numero de cuotas pagadas sea 3, tenga 30 año y tenga una tarjeta de crédito es:
+
+```{r }
+predict(logit, newdata, type = "response")
+predict(probit, newdata, type = "response")
+```
+
+
+#### La probabilidad de que una persona sea un mal pagador, con ambos modelos es del 42%
+
+### Concluya su análisis decidiendo con qué modelo se quedaría
+
+##### El modelo que eligiria para trabajar, seria indistinto, ya que ambo modelos presentan un punto de corte muy bajo y muy similar, asi mismo en el grafico, las areas bajo las curvas de ambos modelos tambien son bajas, ya que estas curvas estas muy alejadas de los ejes superior y vertical
